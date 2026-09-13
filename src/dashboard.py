@@ -20,20 +20,29 @@ from modeling import (
 
 st.set_page_config(page_title="Betting Optimizer", layout="wide")
 
-st.title("Betting Optimizer Dashboard")
-st.caption("Pre-match feature engineering, time-based benchmarking, bookmaker edge analysis, and feature-combo comparison.")
-
 with st.sidebar:
     st.header("Settings")
     page = st.radio("Sida", ["Modellering", "Features"], horizontal=True)
-    rows = st.number_input("Rows to load", min_value=1000, max_value=50000, value=5000, step=1000)
     if page == "Features":
+        rows = st.number_input("Rows to load", min_value=1000, max_value=50000, value=5000, step=1000)
         feature_group_name = st.selectbox(
             "Feature combo", options=list(FEATURE_GROUPS.keys()), index=2,
         )
         edge_threshold = st.slider("Min edge to inspect (%)", min_value=0.0, max_value=10.0, value=3.0, step=0.5)
-    gini_threshold = st.number_input("Minsta Gini för featurefilter", min_value=0.0, max_value=1.0,
-                                    value=0.02, step=0.01, format="%.3f", key="screen_threshold")
+        gini_threshold = st.number_input("Minsta Gini för featurefilter", min_value=0.0, max_value=1.0,
+                                        value=0.02, step=0.01, format="%.3f", key="screen_threshold")
+
+st.title("Betting Optimizer Dashboard")
+if page == "Modellering":
+    st.caption("Logistisk regression för Premier League, tränad på all historik före 2023/24.")
+else:
+    st.caption("Pre-match feature engineering, time-based benchmarking, bookmaker edge analysis, and feature-combo comparison.")
+if page == "Modellering":
+    try:
+        render_model_lab()
+    except ValueError as error:
+        st.error(str(error))
+    st.stop()
 
 @st.cache_data(ttl=3600, max_entries=4)
 def load_and_engineer(rows):
@@ -55,13 +64,6 @@ st.caption(f"Inlästa matchdatum: {engineered.MatchDate.min():%Y-%m-%d}–{engin
            "Radgränsen väljer de första raderna i datakällan. Tabellplaceringarna gäller före varje historisk matchdag.")
 with st.expander("Visa rådata"):
     st.dataframe(df.head(10), width="stretch")
-
-if page == "Modellering":
-    try:
-        render_model_lab(engineered, float(gini_threshold))
-    except ValueError as error:
-        st.error(str(error))
-    st.stop()
 
 @st.cache_resource(max_entries=4)
 def fit_models(model_df, feature_cols):
