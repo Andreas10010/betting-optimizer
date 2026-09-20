@@ -101,7 +101,7 @@ The CLI and dashboard's **Run walk-forward comparison** button compare feature f
 
 Outputs are fold-level log loss, accuracy, multiclass Brier score (sum across three classes, range 0–2), and ten-bin calibration tables per H/D/A outcome. Aggregate metrics are weighted by evaluated match count. Calibration tables diagnose probabilities; they do not fit a probability calibrator. Use development folds to select groups and parameters, then evaluate the choice on an untouched later period. Differences between groups are descriptive; no significance claim is made.
 
-The dashboard's separate model comparison uses calendar train/validation/test windows (through 2022, 2023–24, 2025 onward), or a chronological 65/20/15 split by distinct dates if those windows are unavailable. Dates never cross split boundaries, and insufficient dates raise an error instead of reusing matches in multiple sets. Bookmaker edge analysis uses test rows and real valid odds only; without odds, it is skipped. The current public CSV has no bookmaker odds columns.
+The dashboard's separate model comparison uses calendar train/validation/test windows (through 2022, 2023–24, 2025 onward), or a chronological 65/20/15 split by distinct dates if those windows are unavailable. Dates never cross split boundaries, and insufficient dates raise an error instead of reusing matches in multiple sets. Bookmaker edge analysis uses test rows and real valid odds only; without odds, it is skipped. The mirror behind `load_raw_data` has no bookmaker odds columns, so that analysis stays inactive; `football_data.load_matches` supplies them.
 
 ## Individual features and the dummy baseline
 
@@ -132,6 +132,27 @@ Results can be ranked by **test or validation**, using macro Gini (higher), log 
 Plots show train/validation/test Gini for every simulation and the best test Gini observed so far. Each point is a separately trained model, not a training iteration. Select any simulated model to inspect its feature list and dummy comparison, per-outcome ROC curves, and calibration curves. Gini is computed using all observations; only plotted ROC lines may be downsampled. Calibration tables include bin counts. A confidence threshold compares mean maximum predicted probability with actual accuracy among the selected matches on train and test, and individual test probabilities are downloadable. These diagnostics do not recalibrate probabilities or establish betting profitability.
 
 Core experiment logic is in `src/model_experiments.py`; the interactive view is in `src/model_lab.py`. The verification suite includes train/test isolation, identical evaluation rows, reproducible unique combinations, feature-count limits, a 50-model search, and exclusion of invalid winners.
+
+## Betting backtest
+
+Forecast metrics say whether the model predicts well; they cannot say whether it makes
+money, because profit depends on the price offered. `src/football_data.py` fetches match
+results *and* bookmaker odds from football-data.co.uk, and `src/backtest.py` settles
+simulated bets against them.
+
+```bash
+PYTHONPATH=. python -m src.backtest
+```
+
+The model is refit before each predicted season using only earlier seasons, its two
+team-level rows per match are pooled into one H/D/A distribution, and flat 1-unit bets
+are placed wherever expected value at the offered price clears a threshold. Every run
+reports a no-skill control: betting one random outcome per match, which loses the
+bookmaker's margin. A strategy that does not beat that control is worse than having no
+model. Results and method are in [reports/backtest](reports/backtest).
+
+Odds columns are cached under `data/football-data/` (gitignored). Finished seasons are
+fetched once; the ongoing season refreshes every 12 hours.
 
 ## Method references
 
