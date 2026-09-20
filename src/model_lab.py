@@ -80,24 +80,88 @@ def cached_bundle(path, mtime):
     return bundle
 
 
+FAIR_ODDS_TICKS = (1.0, 1.5, 2.0, 2.5, 3.0, 4.0, 5.0, 10.0)
+FAIR_ODDS_PROB_TICKS = [100.0 / odds for odds in FAIR_ODDS_TICKS]
+
+
+def fair_decimal_odds(probability):
+    """Fair decimal odds implied by a model probability: 1 / p."""
+    try:
+        value = float(probability)
+    except (TypeError, ValueError):
+        return float("nan")
+    if value <= 0:
+        return float("nan")
+    return 1.0 / value
+
+
 def probability_figure(probabilities):
     frame = pd.DataFrame({
         "Utfall": list(CLASS_ORDER),
         "Sannolikhet": [100 * probabilities[label] for label in CLASS_ORDER],
+        "Odds": [fair_decimal_odds(probabilities[label]) for label in CLASS_ORDER],
     })
-    return (
+    shared_x = alt.X("Utfall:N", sort=list(CLASS_ORDER), title="Utfall")
+    probability_y = alt.Y(
+        "Sannolikhet:Q",
+        scale=alt.Scale(domain=[0, 108]),
+        axis=alt.Axis(
+            title="Sannolikhet (%)",
+            orient="left",
+            values=[0, 20, 40, 60, 80, 100],
+        ),
+    )
+    tooltip = [
+        "Utfall",
+        alt.Tooltip("Sannolikhet:Q", title="Sannolikhet (%)", format=".1f"),
+        alt.Tooltip("Odds:Q", title="Fair odds", format=".2f"),
+    ]
+    bars = (
         alt.Chart(frame)
         .mark_bar()
         .encode(
-            x=alt.X("Utfall:N", sort=list(CLASS_ORDER), title="Utfall"),
-            y=alt.Y("Sannolikhet:Q", title="Sannolikhet (%)", scale=alt.Scale(domain=[0, 100])),
+            x=shared_x,
+            y=probability_y,
             color=alt.Color(
                 "Utfall:N",
                 scale=alt.Scale(domain=list(CLASS_ORDER), range=["#b2182b", "#7f7f7f", "#2c7bb6"]),
                 legend=None,
             ),
-            tooltip=["Utfall", alt.Tooltip("Sannolikhet:Q", format=".1f")],
+            tooltip=tooltip,
         )
+    )
+    odds_axis = (
+        alt.Chart(frame)
+        .mark_point(opacity=0)
+        .encode(
+            x=shared_x,
+            y=alt.Y(
+                "Sannolikhet:Q",
+                scale=alt.Scale(domain=[0, 108]),
+                axis=alt.Axis(
+                    title="Fair odds",
+                    orient="right",
+                    values=FAIR_ODDS_PROB_TICKS,
+                    labelExpr="format(100 / datum.value, '.2f')",
+                    grid=False,
+                ),
+            ),
+        )
+    )
+    labels = (
+        alt.Chart(frame)
+        .mark_text(dy=-10, fontSize=12, fontWeight=600)
+        .encode(
+            x=shared_x,
+            y=alt.Y("Sannolikhet:Q", scale=alt.Scale(domain=[0, 108]), axis=None),
+            text=alt.Text("Odds:Q", format=".2f"),
+            tooltip=tooltip,
+        )
+    )
+    return (
+        alt.layer(bars, odds_axis, labels)
+        .resolve_scale(y="shared")
+        .resolve_axis(y="independent")
         .properties(title="Modellens sannolikheter för det valda laget", height=260)
     )
 
@@ -149,6 +213,10 @@ def render_match_explanation(model, match):
     c.metric("Faktiskt utfall", actual)
     d.metric("Rätt?", "Ja" if predicted == actual else "Nej")
     st.altair_chart(probability_figure(explanation["probabilities"]), width="stretch")
+    st.caption(
+        "Höger axel och siffrorna ovanför staplarna är fair decimalodds (1 / sannolikhet): "
+        "vad ett spelbolag borde sätta utan marginal. Lika chans (33 %) ger 3,00; 50 % ger 2,00."
+    )
     st.altair_chart(contribution_figure(explanation), width="stretch")
     st.caption(
         "Staplarna visar hur mycket varje feature, efter skalning, flyttar log-odds för det predicerade "

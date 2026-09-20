@@ -45,6 +45,58 @@ def test_parse_renames_to_mirror_schema_and_keeps_odds():
     assert row.B365CH == 1.29 and row.AvgCA == 9.4
 
 
+MIXED_YEARS = (b"Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR\n"
+               b"E0,19/08/00,Charlton,Man City,4,0,H\n"
+               b"E0,15/08/2025,Liverpool,Bournemouth,4,2,H\n")
+
+
+def test_two_digit_and_four_digit_dates_parse_in_the_same_file():
+    frame = _parse(MIXED_YEARS, year=2000)
+    assert list(frame.MatchDate) == [pd.Timestamp("2000-08-19"), pd.Timestamp("2025-08-15")]
+
+
+def test_parse_match_dates_recovers_when_mixed_is_a_literal_format():
+    # pandas 1.x + format="mixed" + errors="coerce" returns all-NaT.
+    values = pd.Series(["19/08/00", "15/08/2025", "05/08/00"])
+    parsed = football_data._parse_match_dates(values)
+    assert list(parsed) == [
+        pd.Timestamp("2000-08-19"),
+        pd.Timestamp("2025-08-15"),
+        pd.Timestamp("2000-08-05"),
+    ]
+
+
+def test_parse_keeps_every_named_1x2_book():
+    payload = (
+        b"Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR,"
+        b"B365H,B365D,B365A,BWH,BWD,BWA,WHH,WHD,WHA,IWH,IWD,IWA\n"
+        b"E0,15/08/2025,Liverpool,Bournemouth,4,2,H,"
+        b"1.30,6.00,8.50,1.28,6.25,9.00,1.32,5.80,8.00,1.25,6.50,9.50\n"
+    )
+    frame = _parse(payload)
+    assert frame.BWH.iloc[0] == 1.28 and frame.WHH.iloc[0] == 1.32
+    assert football_data.opening_book_codes(frame.columns) == ["B365", "BW", "WH", "IW"]
+    assert football_data.parse_1x2_column("PSCH") == ("PS", "H", True)
+    assert football_data.parse_1x2_column("B365H") == ("B365", "H", False)
+    assert football_data.parse_1x2_column("VCH") == ("VC", "H", False)
+    assert football_data.parse_1x2_column("VCCH") == ("VC", "H", True)
+    assert football_data.parse_1x2_column("B365AHH") is None
+
+
+def test_best_named_opening_picks_the_highest_price_per_outcome():
+    frame = _parse(
+        b"Div,Date,HomeTeam,AwayTeam,FTHG,FTAG,FTR,"
+        b"B365H,B365D,B365A,BWH,BWD,BWA,WHH,WHD,WHA,IWH,IWD,IWA,MaxH,AvgH\n"
+        b"E0,15/08/2025,Liverpool,Bournemouth,4,2,H,"
+        b"1.30,6.00,8.50,1.28,6.25,9.00,1.32,5.80,8.00,1.25,6.50,9.50,1.40,1.31\n"
+    )
+    best = football_data.best_named_opening(frame)
+    assert best.best_price_H.iloc[0] == 1.32 and best.best_book_H.iloc[0] == "WH"
+    assert best.best_price_D.iloc[0] == 6.50 and best.best_book_D.iloc[0] == "IW"
+    assert best.best_price_A.iloc[0] == 9.50 and best.best_book_A.iloc[0] == "IW"
+    # Max/Avg are aggregates, not candidates, even when they are higher.
+
+
 def test_legacy_market_aggregates_map_onto_the_modern_names():
     frame = _parse(LEGACY, year=2005)
     row = frame.iloc[0]
